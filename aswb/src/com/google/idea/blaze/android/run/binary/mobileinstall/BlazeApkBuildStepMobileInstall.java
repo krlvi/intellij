@@ -153,7 +153,7 @@ public class BlazeApkBuildStepMobileInstall implements BlazeApkBuildStep {
               try {
                 context.output(new StatusOutput("Reading deployment information..."));
                 deployInfo =
-                    deployInfoHelper.readDeployInfo(
+                    deployInfoHelper.readDeployInfoForNormalBuild(
                         context,
                         buildResultHelper,
                         fileName -> fileName.endsWith(deployInfoSuffix));

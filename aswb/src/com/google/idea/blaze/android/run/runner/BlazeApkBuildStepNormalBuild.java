@@ -31,20 +31,13 @@ import com.google.idea.blaze.base.command.buildresult.BuildResultHelper.GetArtif
 import com.google.idea.blaze.base.command.buildresult.BuildResultHelperProvider;
 import com.google.idea.blaze.base.console.BlazeConsoleLineProcessorProvider;
 import com.google.idea.blaze.base.filecache.FileCaches;
-import com.google.idea.blaze.base.ideinfo.Dependency;
-import com.google.idea.blaze.base.ideinfo.TargetIdeInfo;
-import com.google.idea.blaze.base.ideinfo.TargetKey;
-import com.google.idea.blaze.base.ideinfo.TargetMap;
-import com.google.idea.blaze.base.model.BlazeProjectData;
 import com.google.idea.blaze.base.model.primitives.Label;
 import com.google.idea.blaze.base.model.primitives.WorkspaceRoot;
 import com.google.idea.blaze.base.scope.BlazeContext;
 import com.google.idea.blaze.base.scope.ScopedTask;
 import com.google.idea.blaze.base.scope.output.IssueOutput;
 import com.google.idea.blaze.base.settings.Blaze;
-import com.google.idea.blaze.base.sync.data.BlazeProjectDataManager;
 import com.google.idea.blaze.base.util.SaveUtil;
-import com.google.idea.blaze.java.AndroidBlazeRules;
 import com.intellij.execution.ExecutionException;
 import com.intellij.openapi.project.Project;
 import java.util.concurrent.CancellationException;
@@ -61,33 +54,6 @@ public class BlazeApkBuildStepNormalBuild implements BlazeApkBuildStep {
     this.project = project;
     this.label = label;
     this.buildFlags = buildFlags;
-  }
-
-  /**
-   * In case we're dealing with an {@link AndroidBlazeRules.RuleTypes#ANDROID_INSTRUMENTATION_TEST},
-   * build the underlying {@link AndroidBlazeRules.RuleTypes#ANDROID_BINARY} instead.
-   */
-  private Label getTargetToBuild() {
-    BlazeProjectData projectData =
-        BlazeProjectDataManager.getInstance(project).getBlazeProjectData();
-    if (projectData == null) {
-      return label;
-    }
-    TargetMap targetMap = projectData.getTargetMap();
-    TargetIdeInfo target = targetMap.get(TargetKey.forPlainTarget(label));
-    if (target == null
-        || target.getKind() != AndroidBlazeRules.RuleTypes.ANDROID_INSTRUMENTATION_TEST.getKind()) {
-      return label;
-    }
-    for (Dependency dependency : target.getDependencies()) {
-      TargetIdeInfo dependencyInfo = targetMap.get(dependency.getTargetKey());
-      // Should exist via test_app attribute, and be unique.
-      if (dependencyInfo != null
-          && dependencyInfo.getKind() == AndroidBlazeRules.RuleTypes.ANDROID_BINARY.getKind()) {
-        return dependency.getTargetKey().getLabel();
-      }
-    }
-    return label;
   }
 
   @Override
@@ -108,7 +74,7 @@ public class BlazeApkBuildStepNormalBuild implements BlazeApkBuildStep {
             try (BuildResultHelper buildResultHelper = BuildResultHelperProvider.create(project)) {
 
               command
-                  .addTargets(getTargetToBuild())
+                  .addTargets(label)
                   .addBlazeFlags("--output_groups=+android_deploy_info")
                   .addBlazeFlags(buildFlags)
                   .addBlazeFlags(buildResultHelper.getBuildFlags());
@@ -132,7 +98,7 @@ public class BlazeApkBuildStepNormalBuild implements BlazeApkBuildStep {
               }
               try {
                 deployInfo =
-                    deployInfoHelper.readDeployInfo(
+                    deployInfoHelper.readDeployInfoForNormalBuild(
                         context,
                         buildResultHelper,
                         fileName -> fileName.endsWith(".deployinfo.pb"));
