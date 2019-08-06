@@ -692,7 +692,38 @@ def divide_java_sources(ctx):
     return java_sources, gen_java_sources, srcjars
 
 def collect_android_info(target, ctx, semantics, ide_info, ide_info_file, output_groups):
-    """Updates Android-specific output groups, returns false if not a Android target."""
+    """Updates Android-specific output groups.
+
+    Args:
+      target: Target to collect info from.
+      ctx: Skylark context for the provided target.
+      semantics: Aspect semantics to comply to.
+      ide_info: Dict of ide-info-name to ide-info proto structs.
+      ide_info_file: File to contain collected ide-infos.
+      output_groups: Dict of output group name to depset of ide-info proto structs.
+
+    Returns:
+      True if any android specific info was collected.
+    """
+    handled = False
+    handled = collect_android_ide_info(target, ctx, semantics, ide_info, ide_info_file, output_groups) or handled
+    handled = collect_android_instrumentation_info(target, ctx, semantics, ide_info, ide_info_file, output_groups) or handled
+    handled = collect_android_aar_ide_info(ctx, ide_info, ide_info_file, output_groups) or handled
+    return handled
+
+def collect_android_ide_info(target, ctx, semantics, ide_info, ide_info_file, output_groups):
+    """Updates intellij-info-android with android_ide_info, and intellij_resolve_android with android resolve files.
+
+    Args:
+      target: Target to collect info from.
+      ctx: Skylark context for the provided target.
+      semantics: Aspect semantics to comply to.
+      ide_info: Dict of ide-info-name to ide-info proto structs.
+      ide_info_file: File to contain collected ide-infos.
+      output_groups: Dict of output group name to depset of ide-info proto structs.
+
+    Returns:
+      False if target doesn't contain android attribute."""
     if not hasattr(target, "android"):
         return False
 
@@ -711,6 +742,11 @@ def collect_android_info(target, ctx, semantics, ide_info, ide_info_file, output
             # Generate unique ResFolderLocation for resource files.
             res_folders.append(struct_omit_none(root = root, resources = res_files.keys()))
 
+    instruments = None
+    if hasattr(ctx.rule.attr, "instruments") and ctx.rule.attr.instruments != None:
+        label = ctx.rule.attr.instruments.label
+        instruments = "//%s:%s" % (label.package, label.name)
+
     android_info = struct_omit_none(
         java_package = android.java_package,
         idl_import_root = android.idl.import_root if hasattr(android.idl, "import_root") else None,
@@ -724,6 +760,7 @@ def collect_android_info(target, ctx, semantics, ide_info, ide_info_file, output
         resources = resources,
         res_folders = res_folders,
         resource_jar = library_artifact(android.resource_jar),
+        instruments = instruments,
         **extra_ide_info
     )
     resolve_files = jars_from_output(android.idl.output)
@@ -734,6 +771,31 @@ def collect_android_info(target, ctx, semantics, ide_info, ide_info_file, output
     ide_info["android_ide_info"] = android_info
     update_set_in_dict(output_groups, "intellij-info-android", depset([ide_info_file]))
     update_set_in_dict(output_groups, "intellij-resolve-android", depset(resolve_files))
+    return True
+
+def collect_android_instrumentation_info(target, ctx, semantics, ide_info, ide_info_file, output_groups):
+    """Updates intellij-info-android output group with android_instrumentation_info.
+
+    Args:
+      target: Target to collect info from.
+      ctx: Skylark context for the provided target.
+      semantics: Aspect semantics to comply to.
+      ide_info: Dict of ide-info-name to ide-info proto structs.
+      ide_info_file: File to contain collected ide-infos.
+      output_groups: Dict of output group name to depset of ide-info proto structs.
+
+    Returns:
+      returns false if not an android_instrumentation_test target.
+    """
+    if not ctx.rule.kind == "android_instrumentation_test":
+        return False
+
+    test_app_label = ctx.rule.attr.test_app.label
+    android_instrumentation_info = struct_omit_none(
+        test_app = "//%s:%s" % (test_app_label.package, test_app_label.name),
+    )
+    ide_info["android_instrumentation_info"] = android_instrumentation_info
+    update_set_in_dict(output_groups, "intellij-info-android", depset([ide_info_file]))
     return True
 
 def collect_android_sdk_info(ctx, ide_info, ide_info_file, output_groups):
@@ -747,8 +809,18 @@ def collect_android_sdk_info(ctx, ide_info, ide_info_file, output_groups):
     update_set_in_dict(output_groups, "intellij-info-android", depset([ide_info_file]))
     return True
 
-def collect_aar_import_info(ctx, ide_info, ide_info_file, output_groups):
-    """Updates android aar_import-relevant groups, returns false if not an aar_import target."""
+def collect_android_aar_ide_info(ctx, ide_info, ide_info_file, output_groups):
+    """Updates intellij-info-android output group with android_arr_ide_info.
+
+    Args:
+      ctx: Skylark context for the provided target.
+      ide_info: Dict of ide-info-name to ide-info proto structs.
+      ide_info_file: File to contain collected ide-infos.
+      output_groups: Dict of output group name to depset of ide-info proto structs.
+
+    Returns:
+      False if target is not of kind aar_import
+    """
     if ctx.rule.kind != "aar_import":
         return False
     if not hasattr(ctx.rule.attr, "aar"):
@@ -894,7 +966,6 @@ def intellij_info_aspect_impl(target, ctx, semantics):
     handled = collect_java_toolchain_info(target, ide_info, ide_info_file, output_groups) or handled
     handled = collect_android_info(target, ctx, semantics, ide_info, ide_info_file, output_groups) or handled
     handled = collect_android_sdk_info(ctx, ide_info, ide_info_file, output_groups) or handled
-    handled = collect_aar_import_info(ctx, ide_info, ide_info_file, output_groups) or handled
 
     # Any extra ide info
     if hasattr(semantics, "extra_ide_info"):
