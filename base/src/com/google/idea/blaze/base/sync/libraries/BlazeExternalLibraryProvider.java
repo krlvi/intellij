@@ -24,8 +24,6 @@ import java.io.File;
 /**
  * {@link AdditionalLibraryRootsProvider} that needs to be handled by {@link
  * ExternalLibraryManager}.
- *
- * <p>Requires update to library files after sync and periodically on frame activation.
  */
 public interface BlazeExternalLibraryProvider {
   String getLibraryName();
